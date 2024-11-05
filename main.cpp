@@ -5,7 +5,7 @@
 #include <random>
 #include <unordered_map>
 #include <iomanip>
-#include "open_address_table.cpp"
+#include "table.cpp"
 
 void benchmark(size_t num_operations) {
     std::random_device rd;
@@ -20,12 +20,15 @@ void benchmark(size_t num_operations) {
     size_t erase_count = num_operations * 0.3;
     std::vector<size_t> erase_indexes(erase_count);
     for (size_t i = 0; i < erase_count; ++i) {
-        erase_indexes[i] = i * 3; // Erase every third key
+        erase_indexes[i] = i * 3;
     }
 
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "testing with " << num_operations << " operations\n";
     std::cout << "will erase " << erase_count << " keys\n\n";
+
+    // Prevent optimization of results
+    volatile uint64_t optimization_guard = 0;
 
     {
         std::unordered_map<uint64_t, uint64_t> map;
@@ -45,6 +48,7 @@ void benchmark(size_t num_operations) {
         }
         auto lookup_end = std::chrono::high_resolution_clock::now();
         auto lookup_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_end - start);
+        optimization_guard += sum;  // Prevent optimization
 
         start = std::chrono::high_resolution_clock::now();
         for (size_t idx : erase_indexes) {
@@ -61,6 +65,7 @@ void benchmark(size_t num_operations) {
         }
         auto lookup_after_erase_end = std::chrono::high_resolution_clock::now();
         auto lookup_after_erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_after_erase_end - start);
+        optimization_guard += sum;  // Prevent optimization
 
         std::cout << "std::unordered_map:\n";
         std::cout << "insert time: " << insert_duration.count() << " ns (avg "
@@ -75,7 +80,7 @@ void benchmark(size_t num_operations) {
     }
 
     {
-        OpenAddressHashMap map;
+        OpenAddressTable map;
 
         auto start = std::chrono::high_resolution_clock::now();
         for (size_t i = 0; i < num_operations; ++i) {
@@ -92,6 +97,7 @@ void benchmark(size_t num_operations) {
         }
         auto lookup_end = std::chrono::high_resolution_clock::now();
         auto lookup_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_end - start);
+        optimization_guard += sum;  // Prevent optimization
 
         start = std::chrono::high_resolution_clock::now();
         for (size_t idx : erase_indexes) {
@@ -108,6 +114,7 @@ void benchmark(size_t num_operations) {
         }
         auto lookup_after_erase_end = std::chrono::high_resolution_clock::now();
         auto lookup_after_erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_after_erase_end - start);
+        optimization_guard += sum;  // Prevent optimization
 
         std::cout << "OpenAddressTable:\n";
         std::cout << "insert time: " << insert_duration.count() << " ns (avg "
@@ -119,6 +126,10 @@ void benchmark(size_t num_operations) {
         std::cout << "lookup time (after erase): " << lookup_after_erase_duration.count() << " ns (avg "
                   << (lookup_after_erase_duration.count() / num_operations) << " ns/op)\n";
         std::cout << "final size: " << map.size() << "\n";
+    }
+
+    if(optimization_guard == 1) {
+        std::cout << "This will never print: " << optimization_guard << "\n";
     }
 }
 
