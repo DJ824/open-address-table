@@ -5,13 +5,12 @@
 #include <optional>
 #include "xxhash/xxhash.h"
 
-// total 24 bytes, rounded to 32
 struct Entry {
     uint64_t key_;
     uint64_t val_;
     uint8_t status_;      // 0 for empty, 1 for tombstone, 2 for occupied
     uint8_t probe_dist_;
-    uint8_t padding_[14];
+    //uint8_t padding_[14];
 } __attribute__((packed, aligned(16)));
 
 class OpenAddressTable {
