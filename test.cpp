@@ -33,7 +33,7 @@ TEST_F(OpenAddressTableTest, BasicInsertAndGet) {
 
 TEST_F(OpenAddressTableTest, UpdateExistingKey) {
     EXPECT_TRUE(table.insert(1, 100));
-    EXPECT_TRUE(table.insert(1, 200));  // Update
+    EXPECT_TRUE(table.insert(1, 200));  
     EXPECT_EQ(table.size(), 1);
 
     auto result = table.get(1);
@@ -82,7 +82,6 @@ TEST_F(OpenAddressTableTest, ProbeSequenceHandling) {
 }
 
 TEST_F(OpenAddressTableTest, EdgeCases) {
-    // Test with extreme values
     EXPECT_TRUE(table.insert(UINT64_MAX, 100));
     EXPECT_TRUE(table.insert(0, 200));
 
@@ -105,7 +104,6 @@ TEST_F(OpenAddressTableTest, LoadFactorBehavior) {
         EXPECT_LE(table.load_factor(), threshold);
     }
 
-    // Next insert should trigger resize
     EXPECT_TRUE(table.insert(max_elements, max_elements));
     EXPECT_GT(table.capacity(), initial_capacity);
 }
@@ -154,7 +152,7 @@ TEST_F(OpenAddressTableTest, StressTest) {
                 reference_map[key] = value;
                 break;
             }
-            case 1: { // Get
+            case 1: { 
                 auto table_result = table.get(key);
                 auto map_result = reference_map.find(key);
                 if (map_result != reference_map.end()) {
@@ -165,7 +163,7 @@ TEST_F(OpenAddressTableTest, StressTest) {
                 }
                 break;
             }
-            case 2: { // Erase
+            case 2: { 
                 bool table_erase = table.erase(key);
                 bool map_erase = reference_map.erase(key) > 0;
                 EXPECT_EQ(table_erase, map_erase);
