@@ -9,7 +9,8 @@ struct Entry {
     uint64_t key_;
     uint64_t val_;
     uint16_t probe_dist_;
-    uint8_t status_;
+    uint8_t status_; 
+    // 0 for empty, 2 for filled 
 } __attribute__((packed, aligned(16)));
 
 class OpenAddressTable {
@@ -130,7 +131,7 @@ public:
         size_t probe_dist = 0;
 
         while (true) {
-            if (data_[pos].status_ == 0) {  // Empty slot
+            if (data_[pos].status_ == 0) {  
                 data_[pos] = entry;
                 ++size_;
                 return true;
