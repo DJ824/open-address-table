@@ -1,205 +1,159 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <numeric>
 #include "table.cpp"
 
-const size_t NUM_OPERATIONS = 10000000;
+const size_t NUM_OPERATIONS = 10'000'000;
+const size_t INITIAL_SIZE = 1'000'000;
+const size_t WARMUP_RUNS = 3;
 
-// Generate consistent test data
-std::vector<uint64_t> generate_test_keys() {
-    std::mt19937_64 gen(1234);  // Fixed seed for reproducibility
-    std::uniform_int_distribution<uint64_t> dis;
-    std::vector<uint64_t> keys(NUM_OPERATIONS);
-    for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-        keys[i] = dis(gen);
-    }
-    return keys;
+struct Statistics {
+    double mean;
+    double median;
+    double p95;
+    double min;
+    double max;
+};
+
+Statistics calculate_stats(std::vector<double>& measurements) {
+    if (measurements.empty()) return {0, 0, 0, 0, 0};
+
+    std::sort(measurements.begin(), measurements.end());
+
+    double sum = std::accumulate(measurements.begin(), measurements.end(), 0.0);
+    double mean = sum / measurements.size();
+    double median = measurements.size() % 2 == 0
+                    ? (measurements[measurements.size()/2 - 1] + measurements[measurements.size()/2]) / 2
+                    : measurements[measurements.size()/2];
+
+    size_t p95_index = static_cast<size_t>(measurements.size() * 0.95);
+    double p95 = measurements[p95_index];
+
+    return {
+            mean,
+            median,
+            p95,
+            measurements.front(),
+            measurements.back()
+    };
 }
 
-static const std::vector<uint64_t> TEST_KEYS = generate_test_keys();
-static const size_t ERASE_COUNT = NUM_OPERATIONS * 0.3;
-static std::vector<size_t> ERASE_INDICES = []() {
-    std::vector<size_t> indices(ERASE_COUNT);
-    for (size_t i = 0; i < ERASE_COUNT; ++i) {
-        indices[i] = i * 3;
-    }
-    return indices;
-}();
+static void BM_OpenAddressTable_MixedWithWarmup(benchmark::State& state) {
+    std::vector<double> measurements;
 
-// Sequential Insert Benchmarks
-static void BM_UnorderedMap_SequentialInsert(benchmark::State& state) {
-    for (auto _ : state) {
-        std::unordered_map<uint64_t, uint64_t> map;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            benchmark::DoNotOptimize(map[TEST_KEYS[i]] = TEST_KEYS[i]);
-        }
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(NUM_OPERATIONS);
-    }
-}
-
-static void BM_OpenAddressTable_SequentialInsert(benchmark::State& state) {
-    for (auto _ : state) {
-        OpenAddressTable table;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            benchmark::DoNotOptimize(table.insert(TEST_KEYS[i], TEST_KEYS[i]));
-        }
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(NUM_OPERATIONS);
-    }
-}
-
-// Sequential Lookup Benchmarks
-static void BM_UnorderedMap_SequentialLookup(benchmark::State& state) {
-    std::unordered_map<uint64_t, uint64_t> map;
-    for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-        map[TEST_KEYS[i]] = TEST_KEYS[i];
-    }
-
-    for (auto _ : state) {
-        uint64_t sum = 0;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            auto it = map.find(TEST_KEYS[i]);
-            if (it != map.end()) benchmark::DoNotOptimize(sum += it->second);
-        }
-        benchmark::DoNotOptimize(sum);
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(NUM_OPERATIONS);
-    }
-}
-
-static void BM_OpenAddressTable_SequentialLookup(benchmark::State& state) {
-    OpenAddressTable table;
-    for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-        table.insert(TEST_KEYS[i], TEST_KEYS[i]);
-    }
-
-    for (auto _ : state) {
-        uint64_t sum = 0;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            auto val = table.get(TEST_KEYS[i]);
-            if (val) benchmark::DoNotOptimize(sum += *val);
-        }
-        benchmark::DoNotOptimize(sum);
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(NUM_OPERATIONS);
-    }
-}
-
-// Sequential Delete Benchmarks
-static void BM_UnorderedMap_SequentialDelete(benchmark::State& state) {
     for (auto _ : state) {
         state.PauseTiming();
-        std::unordered_map<uint64_t, uint64_t> map;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            map[TEST_KEYS[i]] = TEST_KEYS[i];
+        OpenAddressTable hashmap;
+        std::minstd_rand generator(42);  // Fixed seed for reproducibility
+        std::uniform_int_distribution<int> uniform_distribution(2, INITIAL_SIZE);
+
+        // Initial insertions
+        for (size_t i = 0; i < INITIAL_SIZE; ++i) {
+            const uint64_t value = uniform_distribution(generator);
+            hashmap.insert(value, 0);
         }
+
+        // Reset generator for consistent operation mix
+        generator.seed(42);
         state.ResumeTiming();
 
-        for (size_t idx : ERASE_INDICES) {
-            benchmark::DoNotOptimize(map.erase(TEST_KEYS[idx]));
+        auto start = std::chrono::high_resolution_clock::now();
+        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
+            const uint64_t value = uniform_distribution(generator);
+            auto result = hashmap.get(value);
+            if (!result.has_value()) {
+                hashmap.insert(value, 0);
+            } else {
+                hashmap.erase(value);
+            }
         }
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(ERASE_COUNT);
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                end - start).count() / static_cast<double>(NUM_OPERATIONS);
+
+        // Only store measurements after warmup
+        if (state.iterations() > WARMUP_RUNS) {
+            measurements.push_back(duration);
+        }
+
+        state.SetItemsProcessed(NUM_OPERATIONS);
     }
+
+    // Calculate and report statistics
+    auto stats = calculate_stats(measurements);
+    state.counters["mean_ns"] = stats.mean;
+    state.counters["median_ns"] = stats.median;
+    state.counters["p95_ns"] = stats.p95;
+    state.counters["min_ns"] = stats.min;
+    state.counters["max_ns"] = stats.max;
 }
 
-static void BM_OpenAddressTable_SequentialDelete(benchmark::State& state) {
+// Benchmark for std::unordered_map with warmup
+static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
+    std::vector<double> measurements;
+
     for (auto _ : state) {
         state.PauseTiming();
-        OpenAddressTable table;
-        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
-            table.insert(TEST_KEYS[i], TEST_KEYS[i]);
+        std::unordered_map<uint64_t, uint64_t> hashmap;
+        hashmap.reserve(INITIAL_SIZE);
+        std::minstd_rand generator(42);  // Fixed seed for reproducibility
+        std::uniform_int_distribution<int> uniform_distribution(2, INITIAL_SIZE);
+
+        // Initial insertions
+        for (size_t i = 0; i < INITIAL_SIZE; ++i) {
+            const uint64_t value = uniform_distribution(generator);
+            hashmap.insert({value, 0});
         }
+
+        // Reset generator for consistent operation mix
+        generator.seed(42);
         state.ResumeTiming();
 
-        for (size_t idx : ERASE_INDICES) {
-            benchmark::DoNotOptimize(table.erase(TEST_KEYS[idx]));
-        }
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(ERASE_COUNT);
-    }
-}
-
-// Add these to your benchmark.cpp file
-
-// Helper function for random operations (similar to your first benchmark)
-inline std::pair<uint64_t, uint64_t> get_random_pair(std::mt19937_64& gen,
-                                                     std::uniform_int_distribution<uint64_t>& dis) {
-    return {dis(gen), dis(gen)};
-}
-
-// Mixed Operations Benchmark for std::unordered_map
-static void BM_UnorderedMap_MixedOperations(benchmark::State& state) {
-    std::mt19937_64 gen(1234);  // Fixed seed for reproducibility
-    std::uniform_int_distribution<uint64_t> dis;
-
-    for (auto _ : state) {
-        std::unordered_map<uint64_t, uint64_t> map;
-        map.reserve(NUM_OPERATIONS / 2);
-
-        for (size_t i = 0; i < NUM_OPERATIONS; i++) {
-            auto [key, value] = get_random_pair(gen, dis);
-            switch (i % 3) {
-                case 0: {  // Insert
-                    benchmark::DoNotOptimize(map.insert_or_assign(key, value));
-                    break;
-                }
-                case 1: {  // Get
-                    auto it = map.find(key);
-                    if (it != map.end()) benchmark::DoNotOptimize(it->second);
-                    break;
-                }
-                case 2: {  // Erase
-                    benchmark::DoNotOptimize(map.erase(key));
-                    break;
-                }
+        auto start = std::chrono::high_resolution_clock::now();
+        for (size_t i = 0; i < NUM_OPERATIONS; ++i) {
+            const uint64_t value = uniform_distribution(generator);
+            auto it = hashmap.find(value);
+            if (it == hashmap.end()) {
+                hashmap.insert({value, 0});
+            } else {
+                hashmap.erase(it);
             }
         }
-        benchmark::ClobberMemory();
-        state.SetItemsProcessed(NUM_OPERATIONS);
-    }
-}
+        auto end = std::chrono::high_resolution_clock::now();
 
-// Mixed Operations Benchmark for OpenAddressTable
-static void BM_OpenAddressTable_MixedOperations(benchmark::State& state) {
-    std::mt19937_64 gen(1234);  // Fixed seed for reproducibility
-    std::uniform_int_distribution<uint64_t> dis;
+        double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                end - start).count() / static_cast<double>(NUM_OPERATIONS);
 
-    for (auto _ : state) {
-        OpenAddressTable table(NUM_OPERATIONS / 2);  // Start with reasonable size
-
-        for (size_t i = 0; i < NUM_OPERATIONS; i++) {
-            auto [key, value] = get_random_pair(gen, dis);
-            switch (i % 3) {
-                case 0: {  // Insert
-                    benchmark::DoNotOptimize(table.insert(key, value));
-                    break;
-                }
-                case 1: {  // Get
-                    auto val = table.get(key);
-                    if (val) benchmark::DoNotOptimize(*val);
-                    break;
-                }
-                case 2: {  // Erase
-                    benchmark::DoNotOptimize(table.erase(key));
-                    break;
-                }
-            }
+        // Only store measurements after warmup
+        if (state.iterations() > WARMUP_RUNS) {
+            measurements.push_back(duration);
         }
-        benchmark::ClobberMemory();
+
         state.SetItemsProcessed(NUM_OPERATIONS);
     }
+
+    // Calculate and report statistics
+    auto stats = calculate_stats(measurements);
+    state.counters["mean_ns"] = stats.mean;
+    state.counters["median_ns"] = stats.median;
+    state.counters["p95_ns"] = stats.p95;
+    state.counters["min_ns"] = stats.min;
+    state.counters["max_ns"] = stats.max;
 }
 
-BENCHMARK(BM_UnorderedMap_MixedOperations)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_OpenAddressTable_MixedOperations)->Unit(benchmark::kMillisecond);
+// Register benchmarks with appropriate settings
+BENCHMARK(BM_OpenAddressTable_MixedWithWarmup)
+        ->Unit(benchmark::kMicrosecond)
+        ->Iterations(WARMUP_RUNS + 5)  // 3 warmup + 5 measured runs
+        ->UseRealTime();
 
-BENCHMARK(BM_UnorderedMap_SequentialInsert)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_OpenAddressTable_SequentialInsert)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_UnorderedMap_SequentialLookup)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_OpenAddressTable_SequentialLookup)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_UnorderedMap_SequentialDelete)->Unit(benchmark::kMillisecond);
-BENCHMARK(BM_OpenAddressTable_SequentialDelete)->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_UnorderedMap_MixedWithWarmup)
+        ->Unit(benchmark::kMicrosecond)
+        ->Iterations(WARMUP_RUNS + 5)  // 3 warmup + 5 measured runs
+        ->UseRealTime();
 
 BENCHMARK_MAIN();

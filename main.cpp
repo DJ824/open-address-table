@@ -1,140 +1,136 @@
-#include <vector>
-#include <optional>
 #include <chrono>
 #include <iostream>
 #include <random>
 #include <unordered_map>
+#include <vector>
+#include <algorithm>
 #include <iomanip>
 #include "table.cpp"
 
-void benchmark(size_t num_operations) {
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<uint64_t> dis;
+// Helper function to calculate statistics
+void print_statistics(const std::vector<double>& measurements, const std::string& label) {
+    if (measurements.empty()) return;
 
-    std::vector<uint64_t> test_keys(num_operations);
-    for (size_t i = 0; i < num_operations; ++i) {
-        test_keys[i] = dis(gen);
-    }
+    auto sorted_measurements = measurements;
+    std::sort(sorted_measurements.begin(), sorted_measurements.end());
 
-    size_t erase_count = num_operations * 0.3;
-    std::vector<size_t> erase_indexes(erase_count);
-    for (size_t i = 0; i < erase_count; ++i) {
-        erase_indexes[i] = i * 3;
-    }
+    double sum = std::accumulate(measurements.begin(), measurements.end(), 0.0);
+    double mean = sum / measurements.size();
+    double median = measurements.size() % 2 == 0
+                    ? (sorted_measurements[measurements.size()/2 - 1] + sorted_measurements[measurements.size()/2]) / 2
+                    : sorted_measurements[measurements.size()/2];
 
-    std::cout << std::fixed << std::setprecision(2);
-    std::cout << "testing with " << num_operations << " operations\n";
-    std::cout << "will erase " << erase_count << " keys\n\n";
+    // Calculate 95th percentile
+    size_t p95_index = static_cast<size_t>(measurements.size() * 0.95);
+    double p95 = sorted_measurements[p95_index];
 
-    // Prevent optimization of results
-    volatile uint64_t optimization_guard = 0;
-
-    {
-        std::unordered_map<uint64_t, uint64_t> map;
-
-        auto start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            map[test_keys[i]] = test_keys[i];
-        }
-        auto insert_end = std::chrono::high_resolution_clock::now();
-        auto insert_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(insert_end - start);
-
-        uint64_t sum = 0;
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            auto it = map.find(test_keys[i]);
-            if (it != map.end()) sum += it->second;
-        }
-        auto lookup_end = std::chrono::high_resolution_clock::now();
-        auto lookup_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_end - start);
-        optimization_guard += sum;  // Prevent optimization
-
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t idx : erase_indexes) {
-            map.erase(test_keys[idx]);
-        }
-        auto erase_end = std::chrono::high_resolution_clock::now();
-        auto erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(erase_end - start);
-
-        sum = 0;
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            auto it = map.find(test_keys[i]);
-            if (it != map.end()) sum += it->second;
-        }
-        auto lookup_after_erase_end = std::chrono::high_resolution_clock::now();
-        auto lookup_after_erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_after_erase_end - start);
-        optimization_guard += sum;  // Prevent optimization
-
-        std::cout << "std::unordered_map:\n";
-        std::cout << "insert time: " << insert_duration.count() << " ns (avg "
-                  << (insert_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "lookup time (before erase): " << lookup_duration.count() << " ns (avg "
-                  << (lookup_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "erase time: " << erase_duration.count() << " ns (avg "
-                  << (erase_duration.count() / erase_count) << " ns/op)\n";
-        std::cout << "lookup time (after erase): " << lookup_after_erase_duration.count() << " ns (avg "
-                  << (lookup_after_erase_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "final size: " << map.size() << "\n\n";
-    }
-
-    {
-        OpenAddressTable map;
-
-        auto start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            map.insert(test_keys[i], test_keys[i]);
-        }
-        auto insert_end = std::chrono::high_resolution_clock::now();
-        auto insert_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(insert_end - start);
-
-        uint64_t sum = 0;
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            auto val = map.get(test_keys[i]);
-            if (val) sum += *val;
-        }
-        auto lookup_end = std::chrono::high_resolution_clock::now();
-        auto lookup_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_end - start);
-        optimization_guard += sum;  // Prevent optimization
-
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t idx : erase_indexes) {
-            map.erase(test_keys[idx]);
-        }
-        auto erase_end = std::chrono::high_resolution_clock::now();
-        auto erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(erase_end - start);
-
-        sum = 0;
-        start = std::chrono::high_resolution_clock::now();
-        for (size_t i = 0; i < num_operations; ++i) {
-            auto val = map.get(test_keys[i]);
-            if (val) sum += *val;
-        }
-        auto lookup_after_erase_end = std::chrono::high_resolution_clock::now();
-        auto lookup_after_erase_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(lookup_after_erase_end - start);
-        optimization_guard += sum;  // Prevent optimization
-
-        std::cout << "OpenAddressTable:\n";
-        std::cout << "insert time: " << insert_duration.count() << " ns (avg "
-                  << (insert_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "lookup time (before erase): " << lookup_duration.count() << " ns (avg "
-                  << (lookup_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "erase time: " << erase_duration.count() << " ns (avg "
-                  << (erase_duration.count() / erase_count) << " ns/op)\n";
-        std::cout << "lookup time (after erase): " << lookup_after_erase_duration.count() << " ns (avg "
-                  << (lookup_after_erase_duration.count() / num_operations) << " ns/op)\n";
-        std::cout << "final size: " << map.size() << "\n";
-    }
-
-    if(optimization_guard == 1) {
-        std::cout << "This will never print: " << optimization_guard << "\n";
-    }
+    std::cout << label << ":\n"
+              << "  Mean: " << std::fixed << std::setprecision(2) << mean << " ns/iter\n"
+              << "  Median: " << median << " ns/iter\n"
+              << "  P95: " << p95 << " ns/iter\n\n";
 }
 
-int main() {
-    const size_t NUM_OPERATIONS = 10000000;
-    benchmark(NUM_OPERATIONS);
+int main(int argc, char* argv[]) {
+    const size_t WARMUP_RUNS = 3;
+    const size_t MEASURED_RUNS = 5;
+    const size_t size = 1'000'000;
+    const size_t iters = 10'000'000;
+
+    // Benchmark OpenAddressTable
+    {
+        std::vector<double> measurements;
+        std::cout << "OpenAddressTable:\n";
+
+        // Run multiple iterations including warmup
+        for (size_t run = 0; run < (WARMUP_RUNS + MEASURED_RUNS); ++run) {
+            OpenAddressTable hashmap;
+            std::minstd_rand generator(42 + run); // Different seed for each run
+            std::uniform_int_distribution<int> uniform_distribution(2, size);
+
+            // Initial insertions
+            for (size_t i = 0; i < size; ++i) {
+                const uint64_t value = uniform_distribution(generator);
+                hashmap.insert(value, 0);
+            }
+
+            // Reset generator for consistent operation mix
+            generator.seed(42 + run);
+
+            // Benchmark mixed operations
+            auto start = std::chrono::high_resolution_clock::now();
+            for (size_t i = 0; i < iters; ++i) {
+                const uint64_t value = uniform_distribution(generator);
+                auto result = hashmap.get(value);
+                if (!result.has_value()) {
+                    hashmap.insert(value, 0);
+                } else {
+                    hashmap.erase(value);
+                }
+            }
+            auto stop = std::chrono::high_resolution_clock::now();
+
+            double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    stop - start).count() / static_cast<double>(iters);
+
+            // Only store measurements after warmup
+            if (run >= WARMUP_RUNS) {
+                measurements.push_back(duration);
+            }
+
+            if (run == WARMUP_RUNS + MEASURED_RUNS - 1) {
+                std::cout << "Final size: " << hashmap.size() << "\n";
+            }
+        }
+
+        print_statistics(measurements, "OpenAddressTable Results");
+    }
+
+    // Benchmark std::unordered_map
+    {
+        std::vector<double> measurements;
+        std::cout << "std::unordered_map:\n";
+
+        for (size_t run = 0; run < (WARMUP_RUNS + MEASURED_RUNS); ++run) {
+            std::unordered_map<uint64_t, uint64_t> hashmap;
+            hashmap.reserve(size);
+            std::minstd_rand generator(42 + run);
+            std::uniform_int_distribution<int> uniform_distribution(2, size);
+
+            // Initial insertions
+            for (size_t i = 0; i < size; ++i) {
+                const uint64_t value = uniform_distribution(generator);
+                hashmap.insert({value, 0});
+            }
+
+            // Reset generator for consistent operation mix
+            generator.seed(42 + run);
+
+            auto start = std::chrono::high_resolution_clock::now();
+            for (size_t i = 0; i < iters; ++i) {
+                const uint64_t value = uniform_distribution(generator);
+                auto it = hashmap.find(value);
+                if (it == hashmap.end()) {
+                    hashmap.insert({value, 0});
+                } else {
+                    hashmap.erase(it);
+                }
+            }
+            auto stop = std::chrono::high_resolution_clock::now();
+
+            double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    stop - start).count() / static_cast<double>(iters);
+
+            if (run >= WARMUP_RUNS) {
+                measurements.push_back(duration);
+            }
+
+            if (run == WARMUP_RUNS + MEASURED_RUNS - 1) {
+                std::cout << "Final size: " << hashmap.size() << "\n";
+            }
+        }
+
+        print_statistics(measurements, "std::unordered_map Results");
+    }
+
     return 0;
 }
