@@ -3,8 +3,10 @@ open address table using robin-hood hashing and linear probing in c++
 
 performance using 64 bit keys vs <std::unordered_map>
 
-<img width="1071" alt="image" src="https://github.com/user-attachments/assets/fdc2b7ab-df46-4c13-94b3-8fed19c92ae3">
+<img width="1177" alt="image" src="https://github.com/user-attachments/assets/72f40e62-a874-4521-9070-8d52c7ec6dc7" />
 
-- it looks like <std::unordered_map> is still faster when we mix operations which is to be expected, however my version does outperform when we test each operation individually
+<img width="383" alt="image" src="https://github.com/user-attachments/assets/c8a4ed4d-a78f-446e-bb78-45726482887b" />
+
+
 
 
