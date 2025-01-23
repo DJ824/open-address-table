@@ -47,16 +47,14 @@ static void BM_OpenAddressTable_MixedWithWarmup(benchmark::State& state) {
     for (auto _ : state) {
         state.PauseTiming();
         OpenAddressTable hashmap;
-        std::minstd_rand generator(42);  // Fixed seed for reproducibility
+        std::minstd_rand generator(42);  
         std::uniform_int_distribution<int> uniform_distribution(2, INITIAL_SIZE);
 
-        // Initial insertions
         for (size_t i = 0; i < INITIAL_SIZE; ++i) {
             const uint64_t value = uniform_distribution(generator);
             hashmap.insert(value, 0);
         }
 
-        // Reset generator for consistent operation mix
         generator.seed(42);
         state.ResumeTiming();
 
@@ -75,7 +73,6 @@ static void BM_OpenAddressTable_MixedWithWarmup(benchmark::State& state) {
         double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 end - start).count() / static_cast<double>(NUM_OPERATIONS);
 
-        // Only store measurements after warmup
         if (state.iterations() > WARMUP_RUNS) {
             measurements.push_back(duration);
         }
@@ -83,7 +80,6 @@ static void BM_OpenAddressTable_MixedWithWarmup(benchmark::State& state) {
         state.SetItemsProcessed(NUM_OPERATIONS);
     }
 
-    // Calculate and report statistics
     auto stats = calculate_stats(measurements);
     state.counters["mean_ns"] = stats.mean;
     state.counters["median_ns"] = stats.median;
@@ -92,7 +88,6 @@ static void BM_OpenAddressTable_MixedWithWarmup(benchmark::State& state) {
     state.counters["max_ns"] = stats.max;
 }
 
-// Benchmark for std::unordered_map with warmup
 static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
     std::vector<double> measurements;
 
@@ -100,16 +95,14 @@ static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
         state.PauseTiming();
         std::unordered_map<uint64_t, uint64_t> hashmap;
         hashmap.reserve(INITIAL_SIZE);
-        std::minstd_rand generator(42);  // Fixed seed for reproducibility
+        std::minstd_rand generator(42);  
         std::uniform_int_distribution<int> uniform_distribution(2, INITIAL_SIZE);
 
-        // Initial insertions
         for (size_t i = 0; i < INITIAL_SIZE; ++i) {
             const uint64_t value = uniform_distribution(generator);
             hashmap.insert({value, 0});
         }
 
-        // Reset generator for consistent operation mix
         generator.seed(42);
         state.ResumeTiming();
 
@@ -128,7 +121,6 @@ static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
         double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 end - start).count() / static_cast<double>(NUM_OPERATIONS);
 
-        // Only store measurements after warmup
         if (state.iterations() > WARMUP_RUNS) {
             measurements.push_back(duration);
         }
@@ -136,7 +128,6 @@ static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
         state.SetItemsProcessed(NUM_OPERATIONS);
     }
 
-    // Calculate and report statistics
     auto stats = calculate_stats(measurements);
     state.counters["mean_ns"] = stats.mean;
     state.counters["median_ns"] = stats.median;
@@ -145,15 +136,14 @@ static void BM_UnorderedMap_MixedWithWarmup(benchmark::State& state) {
     state.counters["max_ns"] = stats.max;
 }
 
-// Register benchmarks with appropriate settings
 BENCHMARK(BM_OpenAddressTable_MixedWithWarmup)
         ->Unit(benchmark::kMicrosecond)
-        ->Iterations(WARMUP_RUNS + 5)  // 3 warmup + 5 measured runs
+        ->Iterations(WARMUP_RUNS + 5)  
         ->UseRealTime();
 
 BENCHMARK(BM_UnorderedMap_MixedWithWarmup)
         ->Unit(benchmark::kMicrosecond)
-        ->Iterations(WARMUP_RUNS + 5)  // 3 warmup + 5 measured runs
+        ->Iterations(WARMUP_RUNS + 5)  
         ->UseRealTime();
 
 BENCHMARK_MAIN();
