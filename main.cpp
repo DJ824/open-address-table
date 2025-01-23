@@ -7,7 +7,6 @@
 #include <iomanip>
 #include "table.cpp"
 
-// Helper function to calculate statistics
 void print_statistics(const std::vector<double>& measurements, const std::string& label) {
     if (measurements.empty()) return;
 
@@ -20,7 +19,6 @@ void print_statistics(const std::vector<double>& measurements, const std::string
                     ? (sorted_measurements[measurements.size()/2 - 1] + sorted_measurements[measurements.size()/2]) / 2
                     : sorted_measurements[measurements.size()/2];
 
-    // Calculate 95th percentile
     size_t p95_index = static_cast<size_t>(measurements.size() * 0.95);
     double p95 = sorted_measurements[p95_index];
 
@@ -36,27 +34,22 @@ int main(int argc, char* argv[]) {
     const size_t size = 1'000'000;
     const size_t iters = 10'000'000;
 
-    // Benchmark OpenAddressTable
     {
         std::vector<double> measurements;
         std::cout << "OpenAddressTable:\n";
 
-        // Run multiple iterations including warmup
         for (size_t run = 0; run < (WARMUP_RUNS + MEASURED_RUNS); ++run) {
             OpenAddressTable hashmap;
-            std::minstd_rand generator(42 + run); // Different seed for each run
+            std::minstd_rand generator(42 + run); 
             std::uniform_int_distribution<int> uniform_distribution(2, size);
 
-            // Initial insertions
             for (size_t i = 0; i < size; ++i) {
                 const uint64_t value = uniform_distribution(generator);
                 hashmap.insert(value, 0);
             }
 
-            // Reset generator for consistent operation mix
             generator.seed(42 + run);
 
-            // Benchmark mixed operations
             auto start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < iters; ++i) {
                 const uint64_t value = uniform_distribution(generator);
@@ -72,7 +65,6 @@ int main(int argc, char* argv[]) {
             double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     stop - start).count() / static_cast<double>(iters);
 
-            // Only store measurements after warmup
             if (run >= WARMUP_RUNS) {
                 measurements.push_back(duration);
             }
@@ -85,7 +77,6 @@ int main(int argc, char* argv[]) {
         print_statistics(measurements, "OpenAddressTable Results");
     }
 
-    // Benchmark std::unordered_map
     {
         std::vector<double> measurements;
         std::cout << "std::unordered_map:\n";
@@ -96,13 +87,11 @@ int main(int argc, char* argv[]) {
             std::minstd_rand generator(42 + run);
             std::uniform_int_distribution<int> uniform_distribution(2, size);
 
-            // Initial insertions
             for (size_t i = 0; i < size; ++i) {
                 const uint64_t value = uniform_distribution(generator);
                 hashmap.insert({value, 0});
             }
 
-            // Reset generator for consistent operation mix
             generator.seed(42 + run);
 
             auto start = std::chrono::high_resolution_clock::now();
